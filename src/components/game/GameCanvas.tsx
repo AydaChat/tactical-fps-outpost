@@ -1,14 +1,17 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useGameStore } from '@/store/gameStore';
+import { WEAPON_CONFIGS } from '@/types/game';
+import { socketClient } from '@/network/socketClient';
+import { soundEngine } from '@/audio/SoundEngine';
 import { Arena } from './Arena';
 import { FPSController } from './FPSController';
 import { ThirdPersonPlayer } from './ThirdPersonPlayer';
 import { ViewModel } from './ViewModel';
-import { TracerManager } from './TracerManager';
+import { TracerManager, fxManager } from './TracerManager';
 
 // ----------------------------------------------------------------------------
 // ATMOSPHERIC SKY DOME (Sci-Fi Deep Sky & Starfield Gradient)
@@ -143,6 +146,100 @@ export const GameCanvas: React.FC = () => {
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const fov = useGameStore((s) => s.graphicsSettings?.fov ?? 85);
 
+  const handleFireRaycast = useCallback((muzzlePos: THREE.Vector3, bulletDir: THREE.Vector3) => {
+    const store = useGameStore.getState();
+    const currentWeapon = store.currentWeaponId;
+    const config = WEAPON_CONFIGS[currentWeapon];
+    const localId = store.playerId;
+    const players = store.players;
+
+    // Send to multiplayer server if connected
+    if (socketClient.isConnected()) {
+      socketClient.sendFire({
+        origin: { x: muzzlePos.x, y: muzzlePos.y, z: muzzlePos.z },
+        direction: { x: bulletDir.x, y: bulletDir.y, z: bulletDir.z },
+        weaponId: currentWeapon,
+        timestamp: Date.now(),
+      });
+    }
+
+    // Raycast hit detection against target players / bots
+    type HitTargetResult = {
+      targetId: string;
+      distance: number;
+      isHeadshot: boolean;
+      hitPoint: THREE.Vector3;
+    };
+    let closestHit: HitTargetResult | null = null;
+
+    Object.values(players).forEach((target) => {
+      if (target.id === localId || target.isDead) return;
+
+      const targetCenter = new THREE.Vector3(target.position.x, target.position.y + 0.9, target.position.z);
+      const toTarget = targetCenter.clone().sub(muzzlePos);
+      const targetDistAlongRay = bulletDir.dot(toTarget);
+
+      if (targetDistAlongRay > 0 && targetDistAlongRay < config.range) {
+        const pointOnRay = muzzlePos.clone().addScaledVector(bulletDir, targetDistAlongRay);
+        const horizDist = Math.hypot(pointOnRay.x - target.position.x, pointOnRay.z - target.position.z);
+        const vertY = pointOnRay.y;
+
+        // Player collision cylinder: radius 0.65m, height from y to y + 1.95m
+        if (horizDist <= 0.65 && vertY >= target.position.y - 0.2 && vertY <= target.position.y + 1.95) {
+          const isHead = vertY >= target.position.y + 1.45;
+          const dist = muzzlePos.distanceTo(pointOnRay);
+
+          if (!closestHit || dist < closestHit.distance) {
+            closestHit = {
+              targetId: target.id,
+              distance: dist,
+              isHeadshot: isHead,
+              hitPoint: pointOnRay,
+            };
+          }
+        }
+      }
+    });
+
+    if (closestHit) {
+      const hit: HitTargetResult = closestHit;
+      const baseDamage = config.damage;
+      const finalDamage = hit.isHeadshot ? Math.round(baseDamage * 2.5) : baseDamage;
+
+      // Play hitmarker audio
+      soundEngine.playHitmarker(hit.isHeadshot);
+
+      // Spawn impact FX
+      fxManager.spawnImpactSparks(
+        hit.hitPoint,
+        bulletDir.clone().negate(),
+        hit.isHeadshot
+      );
+
+      // Send to server
+      if (socketClient.isConnected()) {
+        socketClient.sendHit({
+          targetId: hit.targetId,
+          weaponId: currentWeapon,
+          hitbox: hit.isHeadshot ? 'head' : 'body',
+          hitPosition: {
+            x: hit.hitPoint.x,
+            y: hit.hitPoint.y,
+            z: hit.hitPoint.z,
+          },
+          clientTimestamp: Date.now(),
+        });
+      }
+
+      // Apply bot damage locally for practice mode
+      store.damageBot(hit.targetId, finalDamage, hit.isHeadshot, {
+        x: hit.hitPoint.x,
+        y: hit.hitPoint.y,
+        z: hit.hitPoint.z,
+      });
+    }
+  }, []);
+
   useEffect(() => {
     const handleLockChange = () => {
       setIsLocked(document.pointerLockElement !== null);
@@ -220,7 +317,7 @@ export const GameCanvas: React.FC = () => {
         <FPSController />
 
         {/* 1st Person Weapon Viewmodel (ADS, Bobbing, Sway, Recoil Kick, Firing) */}
-        <ViewModel />
+        <ViewModel onFireRaycast={handleFireRaycast} />
 
         {/* Bullet Tracers & Spark Effects */}
         <TracerManager />

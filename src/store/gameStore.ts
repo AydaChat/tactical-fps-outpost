@@ -110,6 +110,8 @@ interface GameStoreState {
   removePlayer: (playerId: string) => void;
 
   // Combat UI Actions
+  startPracticeMode: (mode?: GameMode) => void;
+  damageBot: (botId: string, damage: number, isHeadshot: boolean, hitPoint?: { x: number; y: number; z: number }) => boolean;
   addKillfeedEntry: (entry: KillfeedEntry) => void;
   pruneKillfeed: () => void;
   addHitmarker: (type: 'body' | 'headshot' | 'kill') => void;
@@ -316,6 +318,263 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       hitmarkers: [],
       isDead: false,
     }),
+
+  startPracticeMode: (mode = 'TDM') => {
+    const state = get();
+    const localId = 'local_operator';
+    const playerTeam = state.preferredTeam || 'ALPHA';
+    const enemyTeam = playerTeam === 'ALPHA' ? 'BRAVO' : 'ALPHA';
+    const primaryWep = state.loadout.primary;
+    const config = WEAPON_CONFIGS[primaryWep];
+
+    const localPlayer: PlayerState = {
+      id: localId,
+      nickname: state.nickname || 'OPERATOR-99',
+      team: playerTeam,
+      position: { x: 0, y: 1.6, z: 2 },
+      rotation: { x: 0, y: 0, z: 0 },
+      velocity: { x: 0, y: 0, z: 0 },
+      health: 100,
+      armor: 50,
+      isDead: false,
+      isCrouching: false,
+      isSprinting: false,
+      isFiring: false,
+      isReloading: false,
+      isAiming: false,
+      currentWeapon: primaryWep,
+      kills: 0,
+      deaths: 0,
+      assists: 0,
+      score: 0,
+      ping: 5,
+      ammo: { current: config.maxAmmo, reserve: config.reserveAmmo },
+    };
+
+    const bots: Record<string, PlayerState> = {
+      [localId]: localPlayer,
+      'bot_vanguard': {
+        id: 'bot_vanguard',
+        nickname: 'BOT-VANGUARD',
+        team: enemyTeam,
+        position: { x: 12, y: 0.5, z: 15 },
+        rotation: { x: 0, y: Math.PI, z: 0 },
+        velocity: { x: 0, y: 0, z: 0 },
+        health: 100,
+        armor: 50,
+        isDead: false,
+        isCrouching: false,
+        isSprinting: false,
+        isFiring: false,
+        isReloading: false,
+        isAiming: false,
+        currentWeapon: 'AR-76',
+        kills: 0,
+        deaths: 0,
+        assists: 0,
+        score: 0,
+        ping: 10,
+        ammo: { current: 30, reserve: 90 },
+      },
+      'bot_spectre': {
+        id: 'bot_spectre',
+        nickname: 'BOT-SPECTRE',
+        team: enemyTeam,
+        position: { x: 0, y: 8.5, z: -28 }, // North Tower Deck
+        rotation: { x: 0, y: 0, z: 0 },
+        velocity: { x: 0, y: 0, z: 0 },
+        health: 100,
+        armor: 50,
+        isDead: false,
+        isCrouching: false,
+        isSprinting: false,
+        isFiring: false,
+        isReloading: false,
+        isAiming: false,
+        currentWeapon: 'SR-99',
+        kills: 0,
+        deaths: 0,
+        assists: 0,
+        score: 0,
+        ping: 15,
+        ammo: { current: 5, reserve: 25 },
+      },
+      'bot_viper': {
+        id: 'bot_viper',
+        nickname: 'BOT-VIPER',
+        team: enemyTeam,
+        position: { x: -16, y: 4.5, z: 0 }, // Mid Platform
+        rotation: { x: 0, y: Math.PI / 2, z: 0 },
+        velocity: { x: 0, y: 0, z: 0 },
+        health: 100,
+        armor: 50,
+        isDead: false,
+        isCrouching: false,
+        isSprinting: false,
+        isFiring: false,
+        isReloading: false,
+        isAiming: false,
+        currentWeapon: 'SMG-9',
+        kills: 0,
+        deaths: 0,
+        assists: 0,
+        score: 0,
+        ping: 12,
+        ammo: { current: 35, reserve: 105 },
+      },
+      'bot_breacher': {
+        id: 'bot_breacher',
+        nickname: 'BOT-BREACHER',
+        team: enemyTeam,
+        position: { x: -12, y: 0.5, z: -15 }, // Corridor Flank
+        rotation: { x: 0, y: 0, z: 0 },
+        velocity: { x: 0, y: 0, z: 0 },
+        health: 100,
+        armor: 50,
+        isDead: false,
+        isCrouching: false,
+        isSprinting: false,
+        isFiring: false,
+        isReloading: false,
+        isAiming: false,
+        currentWeapon: 'SG-12',
+        kills: 0,
+        deaths: 0,
+        assists: 0,
+        score: 0,
+        ping: 14,
+        ammo: { current: 8, reserve: 32 },
+      },
+    };
+
+    const practiceRoom: Room = {
+      id: 'SOLO01',
+      name: 'OUTPOST-09 PRACTICE ARENA',
+      mode,
+      maxPlayers: 8,
+      createdAt: Date.now(),
+      hostId: localId,
+      players: bots,
+      matchState: {
+        status: 'in_progress',
+        timeRemaining: 600,
+        totalMatchTime: 600,
+        scoreAlpha: 0,
+        scoreBravo: 0,
+        targetScore: mode === 'TDM' ? 50 : 30,
+        winnerTeam: null,
+      },
+    };
+
+    set({
+      playerId: localId,
+      currentRoom: practiceRoom,
+      matchState: practiceRoom.matchState,
+      isInGame: true,
+      isConnecting: false,
+      connectionError: null,
+      health: 100,
+      armor: 50,
+      isDead: false,
+      currentWeaponId: primaryWep,
+      ammo: { current: config.maxAmmo, reserve: config.reserveAmmo },
+      players: bots,
+    });
+  },
+
+  damageBot: (botId: string, damage: number, isHeadshot: boolean, hitPoint?: { x: number; y: number; z: number }) => {
+    const state = get();
+    const bot = state.players[botId];
+    if (!bot || bot.isDead) return false;
+
+    // Apply armor reduction (65% absorbed by armor)
+    let appliedDamage = damage;
+    let newArmor = bot.armor;
+    if (newArmor > 0) {
+      const absorbed = Math.min(newArmor, Math.floor(damage * 0.65));
+      newArmor -= absorbed;
+      appliedDamage -= absorbed;
+    }
+    const newHealth = Math.max(0, bot.health - appliedDamage);
+    const isKilled = newHealth <= 0;
+
+    // Trigger hitmarker on local HUD
+    state.addHitmarker(isKilled ? 'kill' : isHeadshot ? 'headshot' : 'body');
+
+    // Update bot state
+    set((s) => ({
+      players: {
+        ...s.players,
+        [botId]: {
+          ...bot,
+          health: newHealth,
+          armor: newArmor,
+          isDead: isKilled,
+        },
+      },
+    }));
+
+    if (isKilled) {
+      const killerName = state.nickname || 'OPERATOR';
+      const points = isHeadshot ? 150 : 100;
+
+      // Add killfeed entry
+      state.addKillfeedEntry({
+        id: `kill_${Date.now()}_${Math.random()}`,
+        killerId: state.playerId,
+        killerName,
+        killerTeam: state.preferredTeam || 'ALPHA',
+        victimId: botId,
+        victimName: bot.nickname,
+        victimTeam: bot.team,
+        weaponId: state.currentWeaponId,
+        isHeadshot,
+        timestamp: Date.now(),
+      });
+
+      // Update match scores
+      set((s) => {
+        const isAlpha = state.preferredTeam === 'ALPHA';
+        return {
+          matchState: {
+            ...s.matchState,
+            scoreAlpha: s.matchState.scoreAlpha + (isAlpha ? 1 : 0),
+            scoreBravo: s.matchState.scoreBravo + (!isAlpha ? 1 : 0),
+          },
+        };
+      });
+
+      // Schedule bot respawn after 3.5 seconds
+      setTimeout(() => {
+        const currentBot = get().players[botId];
+        if (currentBot && currentBot.isDead) {
+          // Select one of the spawn coordinates
+          const spawns = [
+            { x: 12, y: 0.5, z: 15 },
+            { x: -12, y: 0.5, z: -15 },
+            { x: 0, y: 8.5, z: -28 },
+            { x: -16, y: 4.5, z: 0 },
+            { x: 15, y: 4.5, z: 0 },
+          ];
+          const spawn = spawns[Math.floor(Math.random() * spawns.length)];
+          set((s) => ({
+            players: {
+              ...s.players,
+              [botId]: {
+                ...currentBot,
+                position: spawn,
+                health: 100,
+                armor: 50,
+                isDead: false,
+              },
+            },
+          }));
+        }
+      }, 3500);
+    }
+
+    return true;
+  },
 
   // Player Actions
   updateLocalPlayer: (partial) =>

@@ -39,6 +39,7 @@ export const Lobby: React.FC = () => {
     leaveRoom,
     setInGame,
     ping,
+    startPracticeMode,
   } = useGameStore();
 
   const [inputCode, setInputCode] = useState('');
@@ -46,6 +47,13 @@ export const Lobby: React.FC = () => {
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [activeTab, setActiveTab] = useState<'matchmaking' | 'loadout'>('matchmaking');
+  const [showServerConfig, setShowServerConfig] = useState(false);
+  const [customServerUrl, setCustomServerUrl] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('tactical_fps_socket_url') || 'http://localhost:3001';
+    }
+    return 'http://localhost:3001';
+  });
 
   // Check URL parameters for ?room=XXXXXX
   useEffect(() => {
@@ -60,6 +68,10 @@ export const Lobby: React.FC = () => {
 
   const handleCreateRoom = () => {
     if (!nickname.trim()) return;
+    if (!socketClient.isConnected()) {
+      startPracticeMode(selectedMode);
+      return;
+    }
     socketClient.createRoom({
       nickname: nickname.trim(),
       mode: selectedMode,
@@ -69,6 +81,10 @@ export const Lobby: React.FC = () => {
 
   const handleJoinByCode = () => {
     if (!nickname.trim() || !inputCode.trim()) return;
+    if (!socketClient.isConnected()) {
+      startPracticeMode(selectedMode);
+      return;
+    }
     socketClient.joinRoom({
       roomCode: inputCode.trim().toUpperCase(),
       nickname: nickname.trim(),
@@ -78,6 +94,10 @@ export const Lobby: React.FC = () => {
 
   const handleQuickMatch = () => {
     if (!nickname.trim()) return;
+    if (!socketClient.isConnected()) {
+      startPracticeMode(selectedMode);
+      return;
+    }
     socketClient.quickMatch({
       nickname: nickname.trim(),
       preferredMode: selectedMode,
@@ -145,19 +165,69 @@ export const Lobby: React.FC = () => {
         </div>
       </header>
 
-      {/* Connection Error Banner */}
+      {/* Connection Notice & Offline Mode Banner */}
       {connectionError && (
-        <div className="w-full max-w-4xl mt-4 p-3 bg-rose-950/80 border border-rose-500/50 rounded text-rose-200 text-xs font-mono flex items-center justify-between z-20 shadow-lg shadow-rose-900/30">
-          <div className="flex items-center gap-2">
-            <span className="text-rose-400 font-bold">SERVER NOTICE:</span>
-            <span>{connectionError}</span>
+        <div className="w-full max-w-5xl mt-3 p-4 bg-[#0e1422]/95 border border-amber-500/40 rounded-xl text-xs font-mono z-20 shadow-2xl backdrop-blur-md">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <div className="w-2.5 h-2.5 rounded-full mt-1 bg-amber-400 animate-pulse" />
+              <div>
+                <div className="font-bold text-white flex items-center gap-2">
+                  <span className="text-amber-400">MULTIPLAYER SUNUCUSU BİLDİRİMİ</span>
+                  <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 text-[10px] rounded uppercase font-bold">
+                    Sunucusuz Mod Aktif
+                  </span>
+                </div>
+                <p className="text-gray-400 text-[11px] mt-0.5 leading-relaxed">
+                  Vercel sunucusuz barındırma ortamında 60Hz Socket.io sunucusu kapalıdır.
+                  <strong className="text-white"> Çevrimdışı Bot Arenası</strong> ile tüm 6 silahı, ses motorunu, zıplama pedlerini ve OUTPOST-09 haritasını anında 60 FPS test edebilir veya yerel sunucu adresinizi bağlayabilirsiniz.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => startPracticeMode(selectedMode)}
+                className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-black font-black uppercase tracking-wider rounded text-xs transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-1.5"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                BOT ARENASINA GİR
+              </button>
+              <button
+                onClick={() => setShowServerConfig(!showServerConfig)}
+                className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-xs font-bold uppercase transition-colors"
+              >
+                ⚙️ Sunucu Ayarı
+              </button>
+              <button
+                onClick={() => socketClient.connect(customServerUrl)}
+                className="px-2.5 py-2 bg-gray-900 border border-gray-700 hover:border-gray-600 text-gray-300 rounded text-[11px] font-bold uppercase transition-colors"
+              >
+                Tekrar Dene
+              </button>
+            </div>
           </div>
-          <button
-            onClick={() => socketClient.connect()}
-            className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded text-[11px] font-bold uppercase transition-colors"
-          >
-            Retry Connection
-          </button>
+
+          {showServerConfig && (
+            <div className="mt-3 pt-3 border-t border-gray-800 flex flex-col sm:flex-row items-center gap-2">
+              <span className="text-gray-400 text-[11px] whitespace-nowrap">WebSocket Sunucu URL:</span>
+              <input
+                type="text"
+                value={customServerUrl}
+                onChange={(e) => setCustomServerUrl(e.target.value)}
+                placeholder="http://localhost:3001"
+                className="flex-1 bg-[#121824] border border-gray-700 rounded px-3 py-1.5 text-white font-mono text-xs focus:outline-none focus:border-cyan-400"
+              />
+              <button
+                onClick={() => {
+                  socketClient.connect(customServerUrl);
+                }}
+                className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-black font-bold uppercase rounded text-xs transition-colors"
+              >
+                Bağlan
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -328,7 +398,7 @@ export const Lobby: React.FC = () => {
                     </p>
                   </div>
 
-                  {/* Action 1: Quick Match */}
+                  {/* Action 1: Quick Match & Bot Arena */}
                   <div className="bg-gradient-to-r from-cyan-950/40 via-[#101726] to-[#121824] p-5 rounded-xl border border-cyan-500/30">
                     <div className="flex items-center justify-between mb-3">
                       <div>
@@ -336,7 +406,9 @@ export const Lobby: React.FC = () => {
                           AUTOMATED QUICK DEPLOY
                         </div>
                         <div className="text-xs text-gray-400 mt-0.5">
-                          Find an active skirmish or automatically instantiate a match
+                          {socketClient.isConnected()
+                            ? 'Açık bir odaya katıl veya otomatik yeni bir karşılaşma başlat'
+                            : 'Anında 60 FPS OUTPOST-09 haritasında botlarla karşılaşmaya başla'}
                         </div>
                       </div>
                       <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-400 text-[10px] font-mono rounded uppercase">
@@ -344,14 +416,23 @@ export const Lobby: React.FC = () => {
                       </span>
                     </div>
 
-                    <button
-                      onClick={handleQuickMatch}
-                      disabled={isConnecting}
-                      className="w-full py-3.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-black font-mono tracking-widest uppercase rounded-lg shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2 transition-all transform active:scale-[0.99] disabled:opacity-50"
-                    >
-                      <Play className="w-5 h-5 fill-current" />
-                      {isConnecting ? 'CONTACTING SERVER...' : 'QUICK MATCH DEPLOY'}
-                    </button>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <button
+                        onClick={handleQuickMatch}
+                        className="py-3.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-black font-mono tracking-wider uppercase rounded-lg shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2 transition-all transform active:scale-[0.99] text-xs sm:text-sm"
+                      >
+                        <Play className="w-4 h-4 fill-current" />
+                        {socketClient.isConnected() ? 'ONLINE HIZLI EŞLEŞ' : 'HIZLI OYNA (BOT ARENA)'}
+                      </button>
+
+                      <button
+                        onClick={() => startPracticeMode(selectedMode)}
+                        className="py-3.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-black font-black font-mono tracking-wider uppercase rounded-lg shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all transform active:scale-[0.99] text-xs sm:text-sm"
+                      >
+                        <Crosshair className="w-4 h-4" />
+                        BOT ANTRENMAN ARENASI
+                      </button>
+                    </div>
                   </div>
 
                   {/* Action 2 & 3: Create Room or Join by Code */}

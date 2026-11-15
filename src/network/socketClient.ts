@@ -27,20 +27,38 @@ class SocketClient {
       return this.socket;
     }
 
-    // Default to environment variable, customUrl, or port 3001 on the current hostname
+    if (this.socket) {
+      this.socket.disconnect();
+      this.socket = null;
+    }
+
     let serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
     if (typeof window !== 'undefined') {
-      const host = window.location.hostname || 'localhost';
-      serverUrl = customUrl || process.env.NEXT_PUBLIC_SOCKET_URL || `http://${host}:3001`;
+      const stored = localStorage.getItem('tactical_fps_socket_url');
+      if (customUrl) {
+        serverUrl = customUrl;
+        localStorage.setItem('tactical_fps_socket_url', customUrl);
+      } else if (stored) {
+        serverUrl = stored;
+      } else if (process.env.NEXT_PUBLIC_SOCKET_URL) {
+        serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL;
+      } else {
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        if (isLocal) {
+          serverUrl = 'http://localhost:3001';
+        } else {
+          serverUrl = 'http://localhost:3001';
+        }
+      }
     }
 
     useGameStore.getState().setConnecting(true);
 
     this.socket = io(serverUrl, {
       transports: ['websocket', 'polling'],
-      reconnectionAttempts: 10,
+      reconnectionAttempts: 2,
       reconnectionDelay: 1000,
-      timeout: 10000,
+      timeout: 3000,
     }) as TypedSocket;
 
     this.setupListeners();
@@ -71,8 +89,11 @@ class SocketClient {
     });
 
     this.socket.on('connect_error', (error) => {
-      console.error('[Socket] Connection error:', error.message);
-      useGameStore.getState().setConnecting(false, `Connection failed: ${error.message}`);
+      console.warn('[Socket] Connection error:', error.message);
+      useGameStore.getState().setConnecting(
+        false,
+        `Sunucu Çevrimdışı (${error.message}). İster Çevrimdışı Bot Arenası'nda hemen oynayabilir, ister özel sunucu adresi bağlayabilirsiniz.`
+      );
     });
 
     // Room Events
